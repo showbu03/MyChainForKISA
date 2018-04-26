@@ -1,73 +1,55 @@
-import json
-
-from dateutil import parser
-from sqlalchemy import Column, String, Integer, DateTime
+import datetime
 
 from app import storage
+from app.block.Block import Block
+from app.block.merkle_tree import merkle_tree
+from app.consensus import pow
 
 
-class Block(storage.Base):
-    __tablename__ = 'blocks'
+#블록을 생성하는 함수
+def create_block(transactions):
 
-    _id = Column(Integer, primary_key=True, autoincrement=True)
-    type = Column(String)
-    prev_block_id = Column(String)
-    prev_block_hash = Column(String)
-    tx_list = Column(String)
-    merkle_root = Column(String)
-    time_stamp = Column(DateTime)
-    block_id = Column(String)
-    block_hash = Column(String)
-    nonce = Column(String)
-    block_info = Column(String)
-    block_miner = Column(Integer)
+    # 내 node 가 가지고 있는 마지막 블럭
+    last_block = get_last_block()
 
-    def __init__(self):
-        self.type = 'B'
-
-    def __str__(self):
-        return self.to_json()
-
-    def to_json(self):
-        return json.dumps({
-            'type': self.type,
-            'time_stamp': self.time_stamp.strftime('%Y%m%d%H%M%S'),
-            'prev_block_id': self.prev_block_id,
-            'prev_block_hash': self.prev_block_hash,
-            'merkle_root': self.merkle_root,
-            'block_hash': self.block_hash,
-            'nonce': self.nonce,
-            'block_id': self.block_id
-        })
-
-    def from_json(self, dictionary):
-        """Constructor"""
-        for key in dictionary:
-            setattr(self, key, dictionary[key])
-
-        self.time_stamp = parser.parse(self.time_stamp)
-        return self
+    # 모든 transaction을 리스트로 생성
+    transactions_str = list(map(lambda x: x.to_json(), transactions))
 
 
-class GenesisBlock(object):
-    def __init__(self):
-        self.type = 'B'
-        self.prev_block_id = 'B000000000000'
-        self.prev_block_hash = 'block_hash'
-        self.tx_list = 'sechain'
-        self.timp_stamp = '0000-00-00-00-00-00'
-        self.block_id = 'B000000000000'
-        self.merkle_root = 'sogangfinotek2017'
-        self.block_hash = 'sechainfinochain2017'
-        self.nonce = 2010101010
+    merkle_root = merkle_tree(transactions_str)
+
+    # block 정보에 merkle root 할당
+    block_info = merkle_root
+
+    # block 객체 생성
+    _block = Block()
+
+    # 마지막 block이 있는 경우
+    if last_block:
+        # block 정보에 마지막 블럭의 해쉬를 더함
+        block_info += last_block.block_hash
+
+        # 새로 생성한 block에 이전 block 정보 저장
+        _block.prev_block_hash = last_block.block_hash
+        _block.prev_block_id = last_block.block_id
+
+    # 작업 증명을 통해 nonce값과 hash 결과 생성
+    hash_result, nonce = pow.get_nonce(block_info, diff_bits=5)
+
+    # block 정보
+    _block.block_hash = hash_result
+    _block.nonce = nonce
+    _block.block_info = block_info
+    _block.time_stamp = datetime.datetime.now()
+    _block.block_id = "B"+str(_block.time_stamp)
+    _block.merkle_root = merkle_root
+
+    return _block
 
 
-def create_block(block):
-    storage.insert(block)
-
-
-def get_my_block():
-    return 0
+def store_block(_block):
+    # 내 node 에 block 저장
+    storage.insert(_block)
 
 
 def count():
@@ -90,16 +72,33 @@ def get_genesis_block():
     return b
 
 
+#최종 블록 가져오기
 def get_last_block():
     if count() == 0:
+        #블록이 없으면 genesis block 을 생성
         return get_genesis_block()
     else:
         return get_all_block()[-1]
 
 
-if __name__ == '__main__':
+#블록 검증 (블록 수신후 수신한 블록을 검증하는) 함수
+#nonce를 잘 찾았는지 검사
+def validate_block(block):
+    from numpy import long
 
-    t = GenesisBlock()
-    temp = json.dumps(t, indent=4, default=lambda o: o.__dict__, sort_keys=True)
-    temps = json.loads(temp)
-    print(type(temps['nonce']))
+    #check nonce
+    block_info = block.block_hash
+    nonce = block.nonce
+    diff_bits = 5
+    target = 2 ** (256 - diff_bits)
+
+    #hash_result = hashlib.sha256(str(block_info).encode('utf-8') + str(nonce).encode('utf-8')).hexdigest()
+
+    #print("Validating block:" + str(long(block_info,16))+"/"+str(target))
+
+    #블록의 해시가 target 보다 작은가
+    if long(block_info, 16) <= target:
+        return True
+    else:
+        return False
+

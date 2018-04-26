@@ -3,8 +3,10 @@ from socket import *
 
 from app import log
 from app import transaction
-from app.block import create_block, Block
+from app.block import validate_block, Block
+from app import block
 from app.transaction import Transaction
+from app.node import key
 
 is_running = True
 
@@ -15,6 +17,7 @@ def stop():
 	is_running = False
 
 
+#리스너를 시작하는 함수
 def start(thread_name, ip_address, port):
 	import json
 
@@ -52,30 +55,36 @@ def start(thread_name, ip_address, port):
 					# dict 데이터로부터 transaction 객체 생성
 					tx = Transaction().from_json(data_json_obj)
 
-					# transaction 추가
-					transaction.add_transaction(tx)
+					message = data_json_obj['time_stamp'] + data_json_obj['message']
+					#트랜잭션 검증(서명 검증)
+					if transaction.validate_tx(data_json_obj['pub_key'], data_json_obj['signature'], message):
+						log.write("Transaction is valid")
+						tx = Transaction().from_json(data_json_obj)
+						transaction.add_transaction(tx)
+						break
+					else:
+						log.write("Transaction is invalid")
+						break
 
-					# TODO release comment when pki is implemented
-					# verify_msg = data_json_obj['time_stamp'] + data_json_obj['message']
-					#
-					# if key.verify_signature(data_json_obj['pub_key'], data_json_obj['signature'],
-					#                                         verify_msg) is True:
-					#     log.write("Transaction is valid")
-					#     tx = Transaction().from_json(data_json_obj)
-					#     transaction.add_transaction(tx)
-					# else:
-					#     log.write("Transaction is invalid")
 
 				# 블록을 수신한 경우
 				elif data_json_obj['type'] == 'B':
-					# 기존의 트랜잭션 삭제
-					transaction.remove_all()
-
+					log.write("Receiving a block")
 					# 블록 생성
 					received_block = Block().from_json(data_json_obj)
+					#블록 검증(nonce 검증)
+					if validate_block(received_block):
+						# 기존의 트랜잭션 삭제
+						transaction.remove_all()
 
-					# 블록 저장
-					create_block(received_block)
+						# 블록 저장
+						block.store_block(received_block)
+						print("Block is added")
+						break
+
+					else:
+						print("Block is invalid")
+						break
 
 			except:
 				traceback.print_exc()

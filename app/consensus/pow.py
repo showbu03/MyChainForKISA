@@ -6,12 +6,13 @@ from numpy import long
 max_nonce = 2 ** 32
 
 
-def proof_of_work(block_info, diff_bits):
+def get_nonce(block_info, diff_bits):
 
     target = 2 ** (256 - diff_bits)
 
     found = False
 
+    #target 보다 작은 해시의 nonce를 찾을 때 까지
     while not found:
         nonce = random.randint(0, max_nonce)
 
@@ -24,5 +25,5 @@ def proof_of_work(block_info, diff_bits):
 
 
 if __name__ == '__main__':
-    n = proof_of_work('TEST', 20)
+    n = get_nonce('TEST', 20)
     print(n)
